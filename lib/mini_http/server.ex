@@ -149,25 +149,19 @@ defmodule MiniHttp.Server do
   end
 
   defp send_response(sock, req) do
-    payload =
-      [
-        # TODO: generate something like markov chain to this.
-        "method=#{req.method}",
-        "target=#{req.target}",
-        "version=#{req.version}",
-        "headers=#{inspect(req.headers)}",
-        "body=#{inspect(req.body)}"
-      ]
-      |> Enum.join("\n")
+    headers = req.headers
+
+    content_type = Map.get(headers, "content-type", "text/plain")
+    content_length = byte_size(req.body)
 
     resp =
       [
         "HTTP/1.1 200 OK\r\n",
-        "Content-Type: text/plain\r\n",
-        "Content-Length: #{byte_size(payload)}\r\n",
+        "Content-Type: #{content_type}\r\n",
+        "Content-Length: #{content_length}\r\n",
         "Connection: close\r\n",
         "\r\n",
-        payload
+        req.body
       ]
 
     :gen_tcp.send(sock, resp)
