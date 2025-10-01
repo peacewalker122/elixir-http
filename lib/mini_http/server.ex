@@ -11,7 +11,8 @@ defmodule MiniHttp.Server do
 
   defp loop_acceptor(socket) do
     {:ok, client} = :gen_tcp.accept(socket)
-    Task.start(fn -> serve(client) end)
+    {:ok, pid} = Task.Supervisor.start_child(MiniHttp.TaskSupervisor, fn -> serve(client) end)
+    :ok = :gen_tcp.controlling_process(client, pid)
     loop_acceptor(socket)
   end
 
@@ -19,6 +20,14 @@ defmodule MiniHttp.Server do
   # build the first line first, second parse the header until it met the \r\n line, and last parse the body.
 
   defp serve(socket) do
+    # randomly crashed
+
+    # with {:ok, req} <- parse_request(socket) do
+    #   send_response(socket, req)
+    # else
+    #   err -> err
+    # end
+
     with {:ok, req} <- parse_request_line(socket),
          {:ok, req} <- parse_header_line(socket, req),
          {:ok, req} <- parse_body(socket, req) do
@@ -31,7 +40,7 @@ defmodule MiniHttp.Server do
   defp parse_request_line(socket) do
     case :gen_tcp.recv(socket, 0) do
       {:ok, line} ->
-        [method, target, version] = line |> String.split(" ", parts: 3)
+        [method, target, version] = String.trim_leading(line) |> String.split(" ", parts: 3)
 
         req = %{
           method: method,
@@ -52,13 +61,11 @@ defmodule MiniHttp.Server do
   defp parse_header_line(socket, req) do
     case :gen_tcp.recv(socket, 0) do
       {:ok, line} ->
-        Logger.info("retrieve header #{line}")
-
         if line == "" || line == "\r\n" do
           {:ok, req}
         else
-          [key, value] = line |> String.split(":", parts: 2)
-          req = %{req | headers: Map.put(req.headers, key, value)}
+          [key, value] = String.trim(line) |> String.split(": ", parts: 2)
+          req = %{req | headers: Map.put(req.headers, String.downcase(key), value)}
           Logger.info("updating current headers with #{inspect(req.headers)}")
           parse_header_line(socket, req)
         end
@@ -71,20 +78,73 @@ defmodule MiniHttp.Server do
       |> Map.get("content-length", "0")
       |> String.to_integer()
 
-    req = %{req | content_length: cl}
+    Logger.info("content-length is #{cl}")
 
-    if cl == 0 do
-      {:ok, req}
-    else
+    if cl > 0 do
       :ok = :inet.setopts(socket, packet: 0)
 
       case :gen_tcp.recv(socket, cl) do
-        {:ok, bin} ->
-          {:ok, %{req | body: bin}}
+        {:ok, body} ->
+          {:ok, %{req | body: body, content_length: cl}}
 
         err ->
           err
       end
+    else
+      {:ok, req}
+    end
+  end
+
+  defp parse_request(socket) do
+    case :gen_tcp.recv(socket, 0) do
+      {:ok, data} ->
+        Logger.info("Received data: #{inspect(data)}")
+        data_lines = String.split(data, "\r\n")
+        [request_line | header_lines] = data_lines
+
+        [method, target, version] = String.split(request_line, " ")
+
+        headers =
+          header_lines
+          |> Enum.filter(&(&1 != ""))
+          |> Enum.map(fn line ->
+            [key, value] = String.split(line, ": ", parts: 2)
+            {key, value}
+          end)
+          |> Enum.into(%{})
+
+        content_length =
+          headers
+          |> Map.get("Content-Length", "0")
+          |> String.to_integer()
+
+        req = %{
+          method: method,
+          target: target,
+          version: version,
+          headers: headers,
+          body: "",
+          content_length: content_length
+        }
+
+        if content_length > 0 do
+          :ok = :inet.setopts(socket, packet: 0)
+
+          case :gen_tcp.recv(socket, content_length) do
+            {:ok, body} ->
+              {:ok, %{req | body: body}}
+
+            err ->
+              err
+          end
+        else
+          {:ok, req}
+        end
+
+        {:ok, req}
+
+      err ->
+        err
     end
   end
 

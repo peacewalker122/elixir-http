@@ -10,9 +10,8 @@ defmodule MiniHttp.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: MiniHttp.Worker.start_link(arg)
-      # {MiniHttp.Worker, arg}
-      {Task, fn -> MiniHttp.Server.accept(@port) end}
+      {Task.Supervisor, name: MiniHttp.TaskSupervisor},
+      Supervisor.child_spec({Task, fn -> MiniHttp.Server.accept(@port) end}, restart: :permanent)
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
