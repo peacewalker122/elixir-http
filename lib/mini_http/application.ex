@@ -11,7 +11,8 @@ defmodule MiniHttp.Application do
   def start(_type, _args) do
     children = [
       {Task.Supervisor, name: MiniHttp.TaskSupervisor},
-      Supervisor.child_spec({Task, fn -> MiniHttp.Server.accept(@port) end}, restart: :permanent)
+      {DynamicSupervisor, strategy: :one_for_one, name: MiniHttp.DynamicSupervisor},
+      {MiniHttp.Server, @port}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
