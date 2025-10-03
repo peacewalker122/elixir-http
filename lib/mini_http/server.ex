@@ -30,7 +30,33 @@ defmodule MiniHttp.Server do
             MiniHttp.RequestWorker.serve(client)
           end)
 
-        :ok = :gen_tcp.controlling_process(client, pid)
+        with :ok <- :gen_tcp.controlling_process(client, pid) do
+          :ok
+        else
+          {:error, :badarg} ->
+            Logger.error(
+              "Failed to set controlling process: badarg, likely the socket is already closed"
+            )
+
+            MiniHttp.RequestWorker.send_response(
+              client,
+              %{
+                method: "GET",
+                target: "/",
+                version: "HTTP/1.1",
+                headers: %{},
+                body: "",
+                content_length: 0
+              },
+              500
+            )
+
+          err ->
+            Logger.error("Failed to set controlling process: #{inspect(err)}")
+        end
+
+      {:error, reason} ->
+        Logger.error("Failed to accept connection: #{inspect(reason)}")
     end
 
     send(self(), :accept)
