@@ -1,6 +1,7 @@
 defmodule MiniHttp.RequestWorker do
   use Agent
 
+  @type transport :: :gen_tcp | :ssl
   @type request :: %{
           method: String.t(),
           target: String.t(),
@@ -57,18 +58,24 @@ defmodule MiniHttp.RequestWorker do
   @doc """
   Handle a single HTTP request on the given socket.
   """
-  def serve(socket) do
+  def serve(socket, transport \\ :gen_tcp) do
     # :timer.sleep(1000..2000 |> Enum.random())
 
-    with {:ok, req} <- parse_request_line(socket),
+    with :ok <- ensure_handshake(socket, transport),
+         {:ok, req} <- parse_request_line(socket, transport),
          {:ok, req} <- request_router(req),
-         {:ok, req} <- parse_header_line(socket, req),
-         {:ok, req} <- parse_body(socket, req) do
-      send_response(socket, req)
+         {:ok, req} <- parse_header_line(socket, req, transport),
+         {:ok, req} <- parse_body(socket, req, transport) do
+      send_response(socket, req, 200, transport)
     else
       {req, :error, status} ->
-        send_response(socket, req, status)
+        send_response(socket, req, status, transport)
         req
+
+      {:handshake_error, reason} ->
+        IO.puts("TLS handshake failed: #{inspect(reason)}")
+        close_socket(transport, socket)
+        {:error, reason}
 
       {:error, reason} ->
         IO.puts("Failed to parse request: #{inspect(reason)}")
@@ -82,7 +89,7 @@ defmodule MiniHttp.RequestWorker do
           content_length: byte_size("Bad Request")
         }
 
-        send_response(socket, err, 400)
+        send_response(socket, err, 400, transport)
         err
 
       _err ->
@@ -95,13 +102,23 @@ defmodule MiniHttp.RequestWorker do
           content_length: byte_size("Internal Server Error")
         }
 
-        send_response(socket, err, 500)
+        send_response(socket, err, 500, transport)
         err
     end
   end
 
-  defp parse_request_line(socket) do
-    case :gen_tcp.recv(socket, 0) do
+  defp ensure_handshake(_socket, :gen_tcp), do: :ok
+
+  defp ensure_handshake(socket, :ssl) do
+    case :ssl.handshake(socket) do
+      :ok -> :ok
+      {:ok, _} -> :ok
+      {:error, reason} -> {:handshake_error, reason}
+    end
+  end
+
+  defp parse_request_line(socket, transport) do
+    case recv(transport, socket, 0) do
       {:ok, line} ->
         [method, target, version] = String.trim_leading(line) |> String.split(" ", parts: 3)
 
@@ -121,15 +138,15 @@ defmodule MiniHttp.RequestWorker do
     end
   end
 
-  defp parse_header_line(socket, req) do
-    case :gen_tcp.recv(socket, 0) do
+  defp parse_header_line(socket, req, transport) do
+    case recv(transport, socket, 0) do
       {:ok, line} ->
         if line == "" || line == "\r\n" do
           {:ok, req}
         else
           [key, value] = String.trim(line) |> String.split(": ", parts: 2)
           req = %{req | headers: Map.put(req.headers, String.downcase(key), value)}
-          parse_header_line(socket, req)
+          parse_header_line(socket, req, transport)
         end
 
       {_err, reason} ->
@@ -137,19 +154,19 @@ defmodule MiniHttp.RequestWorker do
     end
   end
 
-  defp parse_body(socket, req = %{headers: headers}) do
+  defp parse_body(socket, req = %{headers: headers}, transport) do
     cl =
       headers
       |> Map.get("content-length", "0")
       |> String.to_integer()
 
     if cl > 0 do
-      case :inet.setopts(socket, packet: 0) do
+      case setopts(transport, socket, packet: 0) do
         :ok -> :ok
         {:error, reason} -> {:error, reason}
       end
 
-      case :gen_tcp.recv(socket, cl) do
+      case recv(transport, socket, cl) do
         {:ok, body} ->
           {:ok, %{req | body: body, content_length: cl}}
 
@@ -190,8 +207,8 @@ defmodule MiniHttp.RequestWorker do
     {req, :error, 404}
   end
 
-  @spec send_response(:gen_tcp.socket(), request(), integer()) :: :ok
-  def send_response(sock, req, status \\ 200) do
+  @spec send_response(:gen_tcp.socket() | :ssl.sslsocket(), request(), integer(), transport()) :: :ok
+  def send_response(sock, req, status \\ 200, transport \\ :gen_tcp) do
     headers = req.headers
 
     content_type = Map.get(headers, "content-type", "text/plain")
@@ -208,12 +225,24 @@ defmodule MiniHttp.RequestWorker do
         req.body
       ]
 
-    with :ok <- :gen_tcp.send(sock, resp) do
-      :gen_tcp.close(sock)
+    with :ok <- transport_send(transport, sock, resp) do
+      close_socket(transport, sock)
     else
       {:error, reason} ->
         IO.puts("Failed to send response: #{inspect(reason)}")
-        :gen_tcp.close(sock)
+        close_socket(transport, sock)
     end
   end
+
+  defp recv(:ssl, socket, length), do: :ssl.recv(socket, length)
+  defp recv(:gen_tcp, socket, length), do: :gen_tcp.recv(socket, length)
+
+  defp transport_send(:ssl, socket, data), do: :ssl.send(socket, data)
+  defp transport_send(:gen_tcp, socket, data), do: :gen_tcp.send(socket, data)
+
+  defp close_socket(:ssl, socket), do: :ssl.close(socket)
+  defp close_socket(:gen_tcp, socket), do: :gen_tcp.close(socket)
+
+  defp setopts(:ssl, socket, opts), do: :ssl.setopts(socket, opts)
+  defp setopts(:gen_tcp, socket, opts), do: :inet.setopts(socket, opts)
 end

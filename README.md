@@ -55,6 +55,17 @@ and crashes are caught so they cannot take down the acceptor loop.
 
    The server binds to `http://localhost:4001`. Logs appear in the same shell.
 
+   To enable TLS, provide certificate paths and set the flag:
+
+   ```bash
+   MINI_HTTP_TLS=true \
+   MINI_HTTP_CERT=priv/cert.pem \
+   MINI_HTTP_KEY=priv/key.pem \
+   mix run --no-halt
+   ```
+
+   When the flag is present the listener switches to HTTPS on the same port.
+
 3. **Interact from another terminal**
 
    ```bash
@@ -111,6 +122,16 @@ with integration scenarios or property tests as you evolve the server.
   parsing approaches.
 - Integrate with observability tools by expanding the Logger usage or emitting
   telemetry events from each request lifecycle stage.
+
+### TLS configuration
+
+- Toggle TLS with the `MINI_HTTP_TLS` environment variable (`true`, `1`, or
+  `yes` enable it).
+- Supply absolute or relative paths to PEM-encoded files via `MINI_HTTP_CERT`
+  and `MINI_HTTP_KEY`.
+- Optionally change the listening port with `MINI_HTTP_PORT` (defaults to 4001).
+- The application validates the files exist at boot and raises a clear error if
+  they are missing.
 
 ## Troubleshooting
 
