@@ -25,13 +25,40 @@ defmodule MiniHttp.Server do
   def handle_info(:accept, socket) do
     case :gen_tcp.accept(socket) do
       {:ok, client} ->
-        {:ok, pid} =
-          Task.Supervisor.start_child(MiniHttp.TaskSupervisor, fn ->
-            MiniHttp.RequestWorker.serve(client)
-          end)
+        task =
+          Task.Supervisor.async_nolink(
+            MiniHttp.TaskSupervisor,
+            fn ->
+              MiniHttp.RequestWorker.serve(client)
+            end
+          )
 
-        with :ok <- :gen_tcp.controlling_process(client, pid) do
-          :ok
+        with :ok <- :gen_tcp.controlling_process(client, task.pid) do
+          # wait up to 30 seconds for the request to be processed
+          try do
+            Task.await(task, 30_000)
+          catch
+            :exit, _reason ->
+              Logger.error("Request processing timed out")
+
+              MiniHttp.RequestWorker.send_response(
+                client,
+                %{
+                  method: "GET",
+                  target: "/",
+                  version: "HTTP/1.1",
+                  headers: %{},
+                  body: "Request Timeout\n",
+                  content_length: byte_size("Request Timeout")
+                },
+                408
+              )
+
+              :gen_tcp.close(client)
+
+              # kill the task if it's still running
+              Task.shutdown(task, :brutal_kill)
+          end
         else
           {:error, :badarg} ->
             Logger.error(
