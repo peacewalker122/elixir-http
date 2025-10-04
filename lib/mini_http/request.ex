@@ -61,11 +61,15 @@ defmodule MiniHttp.RequestWorker do
     # :timer.sleep(1000..2000 |> Enum.random())
 
     with {:ok, req} <- parse_request_line(socket),
-         req <- request_router(req),
+         {:ok, req} <- request_router(req),
          {:ok, req} <- parse_header_line(socket, req),
          {:ok, req} <- parse_body(socket, req) do
       send_response(socket, req)
     else
+      {req, :error, status} ->
+        send_response(socket, req, status)
+        req
+
       {:error, reason} ->
         IO.puts("Failed to parse request: #{inspect(reason)}")
 
@@ -159,23 +163,31 @@ defmodule MiniHttp.RequestWorker do
 
   defp request_router(%{method: "GET", target: "/"} = req) do
     %{req | body: "Hello, World!", content_length: byte_size("Hello, World!")}
+
+    {:ok, req}
   end
 
   defp request_router(%{method: "GET", target: "/health"} = req) do
     %{req | body: "OK", content_length: byte_size("OK")}
+
+    {:ok, req}
   end
 
   defp request_router(%{method: "GET", target: "/sleep"} = req) do
     :timer.sleep(35000)
     %{req | body: "Slept for 35 seconds", content_length: byte_size("Slept for 5 seconds")}
+
+    {:ok, req}
   end
 
   defp request_router(%{method: "POST", target: "/echo"} = req) do
     %{req | body: req.body, content_length: byte_size(req.body), headers: req.headers}
+
+    {:ok, req}
   end
 
   defp request_router(req) do
-    %{req | body: "Not Found", content_length: byte_size("Not Found")}
+    {req, :error, 404}
   end
 
   @spec send_response(:gen_tcp.socket(), request(), integer()) :: :ok
