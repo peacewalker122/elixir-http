@@ -207,7 +207,8 @@ defmodule MiniHttp.RequestWorker do
     {req, :error, 404}
   end
 
-  @spec send_response(:gen_tcp.socket() | :ssl.sslsocket(), request(), integer(), transport()) :: :ok
+  @spec send_response(:gen_tcp.socket() | :ssl.sslsocket(), request(), integer(), transport()) ::
+          :ok
   def send_response(sock, req, status \\ 200, transport \\ :gen_tcp) do
     headers = req.headers
 

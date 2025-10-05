@@ -55,7 +55,14 @@ and crashes are caught so they cannot take down the acceptor loop.
 
    The server binds to `http://localhost:4001`. Logs appear in the same shell.
 
-   To enable TLS, provide certificate paths and set the flag:
+   To enable TLS locally, first generate a self-signed certificate (requires
+   `openssl`):
+
+   ```bash
+   ./scripts/generate_dev_certs.sh
+   ```
+
+   Then provide the certificate paths and set the flag:
 
    ```bash
    MINI_HTTP_TLS=true \
@@ -65,6 +72,8 @@ and crashes are caught so they cannot take down the acceptor loop.
    ```
 
    When the flag is present the listener switches to HTTPS on the same port.
+   Alternatively, copy `.env.example` to `.env`, tweak the values, and the
+   application will load them automatically during boot.
 
 3. **Interact from another terminal**
 
@@ -125,10 +134,14 @@ with integration scenarios or property tests as you evolve the server.
 
 ### TLS configuration
 
+- Run `./scripts/generate_dev_certs.sh` to create local self-signed assets in
+  `priv/certs`.
 - Toggle TLS with the `MINI_HTTP_TLS` environment variable (`true`, `1`, or
   `yes` enable it).
 - Supply absolute or relative paths to PEM-encoded files via `MINI_HTTP_CERT`
   and `MINI_HTTP_KEY`.
+- Copy `.env.example` to `.env` to manage these variables locally; the loader
+  runs before the supervision tree starts.
 - Optionally change the listening port with `MINI_HTTP_PORT` (defaults to 4001).
 - The application validates the files exist at boot and raises a clear error if
   they are missing.

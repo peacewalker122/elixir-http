@@ -15,6 +15,11 @@
 
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
+.env
+.env.*
+!.env.example
+priv/certs/*.crt
+priv/certs/*.key
 
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez

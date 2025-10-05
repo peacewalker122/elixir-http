@@ -7,6 +7,8 @@ defmodule MiniHttp.Application do
 
   @impl true
   def start(_type, _args) do
+    MiniHttp.Env.load()
+
     children = [
       {Task.Supervisor, name: MiniHttp.TaskSupervisor},
       {DynamicSupervisor, strategy: :one_for_one, name: MiniHttp.DynamicSupervisor},
