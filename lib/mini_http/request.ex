@@ -179,26 +179,26 @@ defmodule MiniHttp.RequestWorker do
   end
 
   defp request_router(%{method: "GET", target: "/"} = req) do
-    %{req | body: "Hello, World!", content_length: byte_size("Hello, World!")}
+    req = %{req | body: "Hello, World!", content_length: byte_size("Hello, World!")}
 
     {:ok, req}
   end
 
   defp request_router(%{method: "GET", target: "/health"} = req) do
-    %{req | body: "OK", content_length: byte_size("OK")}
+    req = %{req | body: "OK", content_length: byte_size("OK")}
 
     {:ok, req}
   end
 
   defp request_router(%{method: "GET", target: "/sleep"} = req) do
     :timer.sleep(35000)
-    %{req | body: "Slept for 35 seconds", content_length: byte_size("Slept for 5 seconds")}
+    req = %{req | body: "Slept for 35 seconds", content_length: byte_size("Slept for 5 seconds")}
 
     {:ok, req}
   end
 
   defp request_router(%{method: "POST", target: "/echo"} = req) do
-    %{req | body: req.body, content_length: byte_size(req.body), headers: req.headers}
+    req = %{req | body: req.body, content_length: byte_size(req.body), headers: req.headers}
 
     {:ok, req}
   end
