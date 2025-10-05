@@ -16,15 +16,14 @@ defmodule MiniHttp.Server do
     with {:ok, listener, transport} <- open_listener(opts) do
       state = %{listener: listener, transport: transport, opts: opts}
 
-      send(self(), :accept)
-      {:ok, state}
+      {:ok, state, {:continue, :accept}}
     else
       {:error, reason} -> {:stop, reason}
     end
   end
 
   @impl true
-  def handle_info(:accept, state) do
+  def handle_continue(:accept, state) do
     case accept_connection(state) do
       {:ok, client} ->
         task =
@@ -93,7 +92,12 @@ defmodule MiniHttp.Server do
         Logger.error("Failed to accept connection: #{inspect(reason)}")
     end
 
-    send(self(), :accept)
+    {:noreply, state, {:continue, :accept}}
+  end
+
+  @impl true
+  def handle_info(message, state) do
+    Logger.debug("Unexpected message in MiniHttp.Server: #{inspect(message)}")
     {:noreply, state}
   end
 
